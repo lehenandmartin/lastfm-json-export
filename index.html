@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Last.fm JSON Export</title>
+<meta name="description" content="Export your full Last.fm scrobble history to a JSON file. Runs entirely in your browser.">
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #ffffff; --text: #1d1d1f; --muted: #6b6b70;
+    --border: #dcdcd8; --accent: #c3110f; --accent-text: #ffffff;
+    --ok: #1f7a3a; --warn: #9a5b00; --err: #b3261e; --log-bg: #f0f0ed;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141416; --card: #1d1d20; --text: #ececee; --muted: #a0a0a8;
+      --border: #34343a; --accent: #e5413a; --accent-text: #ffffff;
+      --ok: #5cc27e; --warn: #e0a64a; --err: #ff7b72; --log-bg: #17171a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141416; --card: #1d1d20; --text: #ececee; --muted: #a0a0a8;
+    --border: #34343a; --accent: #e5413a; --accent-text: #ffffff;
+    --ok: #5cc27e; --warn: #e0a64a; --err: #ff7b72; --log-bg: #17171a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 12px; }
+  .badge {
+    font-size: .9rem; margin: 0 0 24px; padding: 8px 12px; border-radius: 8px;
+    background: var(--card); border: 1px solid var(--border);
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
+  .hint { font-weight: 400; color: var(--muted); font-size: .85rem; }
+  input {
+    width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .field { margin-bottom: 16px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+  details summary { cursor: pointer; color: var(--muted); margin-bottom: 12px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  button {
+    font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .progress { height: 10px; background: var(--log-bg); border-radius: 5px; overflow: hidden; margin: 12px 0 6px; border: 1px solid var(--border); }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .status { font-size: .9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #log {
+    background: var(--log-bg); border-radius: 8px; padding: 10px 12px; margin-top: 12px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 180px;
+    overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  #log:empty { display: none; }
+  .err { color: var(--err); } .warn { color: var(--warn); } .ok { color: var(--ok); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0 0 16px; }
+  dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-all; }
+  .hidden { display: none; }
+  .note { font-size: .85rem; color: var(--muted); }
+  code { font-size: .85em; background: var(--log-bg); padding: 1px 4px; border-radius: 4px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Last.fm JSON export</h1>
+  <p class="lead">Download your full Last.fm scrobble history as a JSON file, straight from the Last.fm API. Everything runs in your browser.</p>
+  <p class="badge"><span class="ok">✓</span> <strong>Koito-proof:</strong> the file can be imported as is into <a href="https://github.com/gabehf/koito">Koito</a> (and any tool that reads the raw <code>user.getRecentTracks</code> format).</p>
+
+  <form id="form" class="card" autocomplete="on">
+    <div class="field">
+      <label for="user">Last.fm username</label>
+      <input id="user" name="username" required autocomplete="username" spellcheck="false" autocapitalize="none">
+    </div>
+    <div class="field">
+      <label for="key">API key <span class="hint">· <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">get one</a></span></label>
+      <input id="key" type="password" required autocomplete="off" spellcheck="false" pattern="[0-9a-fA-F]{32}" title="32 hexadecimal characters">
+    </div>
+    <details>
+      <summary>Options</summary>
+      <div class="row">
+        <div class="field">
+          <label for="from">From <span class="hint">(optional)</span></label>
+          <input id="from" type="datetime-local">
+        </div>
+        <div class="field">
+          <label for="to">To <span class="hint">(default: now)</span></label>
+          <input id="to" type="datetime-local">
+        </div>
+      </div>
+      <div class="field">
+        <label for="maxPages">Max pages <span class="hint">(200 scrobbles each, for testing)</span></label>
+        <input id="maxPages" type="number" min="1" step="1" inputmode="numeric">
+      </div>
+    </details>
+    <div class="buttons">
+      <button class="primary" id="start" type="submit">Start export</button>
+      <button id="stop" type="button" class="hidden">Pause</button>
+    </div>
+    <p class="note">Your API key stays in this browser and is only sent to Last.fm. It is never saved. Progress is stored locally, so if you close the tab you can resume by starting again with the same settings.</p>
+  </form>
+
+  <section id="resumeCard" class="card hidden">
+    <p id="resumeText" style="margin-top:0"></p>
+    <div class="buttons">
+      <button class="primary" id="resumeBtn" type="button">Resume</button>
+      <button id="restartBtn" type="button">Start over</button>
+    </div>
+  </section>
+
+  <section id="progressCard" class="card hidden" aria-live="polite">
+    <div class="status" id="status">Preparing…</div>
+    <div class="progress"><div id="bar"></div></div>
+    <div id="log"></div>
+  </section>
+
+  <section id="doneCard" class="card hidden">
+    <dl>
+      <dt>Scrobbles</dt><dd id="sCount"></dd>
+      <dt>First</dt><dd id="sFirst"></dd>
+      <dt>Last</dt><dd id="sLast"></dd>
+      <dt>File</dt><dd id="sFile"></dd>
+    </dl>
+    <div class="buttons">
+      <button class="primary" id="download" type="button">Download again</button>
+      <button id="clear" type="button">Clear local data</button>
+    </div>
+    <p class="note">Importing into Koito: copy the file into Koito's <code>import/</code> folder on your server, then run <code>docker compose restart koito</code>. Keep <code>recenttracks</code> in the file name, as Koito uses it to detect Last.fm exports.</p>
+  </section>
+</main>
+
+<script>
+"use strict";
+/*
+ * Output format: a JSON array of raw `recenttracks` pages from user.getRecentTracks
+ * (non-extended, so artist["#text"] is set). This is exactly what Koito's
+ * internal/importer/lastfm.go reads.
+ */
+const API_URL = "https://ws.audioscrobbler.com/2.0/";
+const PAGE_LIMIT = 200;
+const MIN_INTERVAL = 250;          // at most 4 requests per second
+const MAX_ATTEMPTS = 8;
+const RETRYABLE = new Set([8, 11, 16, 29]);
+const FATAL = {
+  4: "Authentication failed: the API key is invalid.",
+  6: "Last.fm user not found (check the username).",
+  10: "Invalid API key.",
+  17: "This user's profile is private, so their history cannot be read.",
+  26: "This API key has been suspended by Last.fm.",
+};
+
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fmt = (ts) => {
+  const d = new Date(ts * 1000), p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const today = () => fmt(Date.now() / 1000).slice(0, 10);
+
+class FatalError extends Error {}
+class Paused extends Error {}
+
+/* ------------------------------------------------------------------ */
+/* Storage: IndexedDB (survives closing the tab), with an in-memory   */
+/* fallback when IndexedDB is unavailable (some private modes).        */
+/* ------------------------------------------------------------------ */
+const range = (jobId) => IDBKeyRange.bound([jobId, 0], [jobId, Infinity]);
+const reqP = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+
+class IdbStore {
+  constructor(db) { this.db = db; }
+  tx(stores, mode, fn) {
+    return new Promise((resolve, reject) => {
+      const t = this.db.transaction(stores, mode);
+      let result;
+      Promise.resolve(fn(t)).then((r) => { result = r; });
+      t.oncomplete = () => resolve(result);
+      t.onerror = t.onabort = () => reject(t.error);
+    });
+  }
+  getJob(id) { return this.tx(["jobs"], "readonly", (t) => reqP(t.objectStore("jobs").get(id))); }
+  putJob(job) { return this.tx(["jobs"], "readwrite", (t) => { t.objectStore("jobs").put(job); }); }
+  putPage(job, page, data) {
+    return this.tx(["pages", "jobs"], "readwrite", (t) => {
+      t.objectStore("pages").put({ job: job.id, page, data });
+      t.objectStore("jobs").put(job);
+    });
+  }
+  getPages(id) { return this.tx(["pages"], "readonly", (t) => reqP(t.objectStore("pages").getAll(range(id)))); }
+  countPages(id) { return this.tx(["pages"], "readonly", (t) => reqP(t.objectStore("pages").count(range(id)))); }
+  deleteJob(id) {
+    return this.tx(["pages", "jobs"], "readwrite", (t) => {
+      t.objectStore("pages").delete(range(id));
+      t.objectStore("jobs").delete(id);
+    });
+  }
+  clear() {
+    return this.tx(["pages", "jobs"], "readwrite", (t) => {
+      t.objectStore("pages").clear(); t.objectStore("jobs").clear();
+    });
+  }
+}
+
+class MemoryStore {
+  constructor() { this.jobs = new Map(); this.pages = new Map(); }
+  async getJob(id) { return this.jobs.get(id); }
+  async putJob(job) { this.jobs.set(job.id, { ...job }); }
+  async putPage(job, page, data) {
+    if (!this.pages.has(job.id)) this.pages.set(job.id, new Map());
+    this.pages.get(job.id).set(page, data);
+    await this.putJob(job);
+  }
+  async getPages(id) { return [...(this.pages.get(id) ?? new Map())].map(([page, data]) => ({ page, data })); }
+  async countPages(id) { return this.pages.get(id)?.size ?? 0; }
+  async deleteJob(id) { this.jobs.delete(id); this.pages.delete(id); }
+  async clear() { this.jobs.clear(); this.pages.clear(); }
+}
+
+let storePromise = null;
+function store() {
+  storePromise ??= new Promise((resolve) => {
+    const fallback = () => {
+      log("Local storage is unavailable in this browser: progress will be lost if you close the tab.", "warn");
+      resolve(new MemoryStore());
+    };
+    try {
+      const req = indexedDB.open("lastfm-export", 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore("jobs", { keyPath: "id" });
+        req.result.createObjectStore("pages", { keyPath: ["job", "page"] });
+      };
+      req.onsuccess = () => resolve(new IdbStore(req.result));
+      req.onerror = fallback;
+      req.onblocked = fallback;
+    } catch {
+      fallback();
+    }
+  });
+  return storePromise;
+}
+
+/* ------------------------------------------------------------------ */
+/* Last.fm API                                                         */
+/* ------------------------------------------------------------------ */
+let lastCall = 0;
+let stopRequested = false;
+
+function redact(text, key) {
+  text = String(text ?? "");
+  if (key) text = text.split(key).join("***");
+  return text.replace(/(api_key=)[^&\s'"]+/g, "$1***");
+}
+
+async function fetchPage(job, key, page) {
+  const params = new URLSearchParams({
+    method: "user.getrecenttracks", user: job.user, api_key: key,
+    format: "json", limit: PAGE_LIMIT, page,
+  });
+  if (job.from != null) params.set("from", job.from);
+  if (job.to != null) params.set("to", job.to);
+
+  let delay = 2000;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (stopRequested) throw new Paused();
+    const wait = MIN_INTERVAL - (performance.now() - lastCall);
+    if (wait > 0) await sleep(wait);
+    lastCall = performance.now();
+
+    let problem;
+    try {
+      const resp = await fetch(`${API_URL}?${params}`, { cache: "no-store", referrerPolicy: "no-referrer" });
+      let payload = null;
+      try { payload = await resp.json(); } catch { /* non-JSON body */ }
+
+      if (payload && typeof payload === "object" && "error" in payload) {
+        const code = Number(payload.error), msg = redact(payload.message, key);
+        if (FATAL[code]) throw new FatalError(`${FATAL[code]} (Last.fm error ${code}: ${msg})`);
+        if (RETRYABLE.has(code)) problem = `Last.fm error ${code} (${msg})`;
+        else throw new FatalError(`Last.fm error ${code}: ${msg}`);
+      } else if (resp.status >= 500 || resp.status === 429) {
+        problem = `HTTP ${resp.status}`;
+      } else if (!resp.ok) {
+        throw new FatalError(`Unexpected HTTP response: ${resp.status}`);
+      } else if (!payload || !payload.recenttracks) {
+        problem = "unreadable or incomplete response";
+      } else {
+        return payload.recenttracks;
+      }
+    } catch (e) {
+      if (e instanceof FatalError || e instanceof Paused) throw e;
+      problem = `network error (${redact(e.message, key)})`;
+    }
+
+    if (attempt === MAX_ATTEMPTS) throw new FatalError(`Page ${page}: failed after ${MAX_ATTEMPTS} attempts (${problem}).`);
+    log(`Page ${page}: ${problem}. Retrying in ${delay / 1000} s (${attempt}/${MAX_ATTEMPTS - 1})`, "warn");
+    await sleep(delay);
+    delay = Math.min(delay * 2, 120000);
+  }
+}
+
+const asTrackList = (raw) => raw == null ? [] : Array.isArray(raw) ? raw : [raw];
+const isNowPlaying = (t) =>
+  String(t?.["@attr"]?.nowplaying ?? "").toLowerCase() === "true" || !String(t?.date?.uts ?? "").trim();
+
+/* ------------------------------------------------------------------ */
+/* UI                                                                  */
+/* ------------------------------------------------------------------ */
+function log(msg, cls = "") {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  if (cls) line.className = cls;
+  $("log").append(line);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+function setProgress(done, total, text) {
+  $("bar").style.width = total ? `${Math.min(100, (done / total) * 100)}%` : "0";
+  $("status").textContent = text;
+}
+function show(id, visible) { $(id).classList.toggle("hidden", !visible); }
+
+function readForm() {
+  const user = $("user").value.trim();
+  const key = $("key").value.trim();
+  const toTs = (v) => v ? Math.floor(new Date(v).getTime() / 1000) : null; // local time
+  const from = toTs($("from").value), to = toTs($("to").value);
+  const maxPages = $("maxPages").value ? Math.max(1, parseInt($("maxPages").value, 10)) : null;
+  if (from != null && to != null && from > to) throw new FatalError("\"From\" is later than \"To\".");
+  // Same username + same bounds = same export, which can be resumed.
+  const id = `${user.toLowerCase()}|${from ?? ""}|${to ?? "auto"}`;
+  return { user, key, from, to, maxPages, id };
+}
+
+let pendingRun = null;   // settings waiting for the resume / start-over choice
+let lastResult = null;   // { blob, name } of the last export
+
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  let params;
+  try { params = readForm(); } catch (e) { return alert(e.message); }
+  try { localStorage.setItem("lastfm-export-user", params.user); } catch {}
+
+  const s = await store();
+  const existing = await s.getJob(params.id).catch(() => null);
+  if (existing) {
+    const n = await s.countPages(params.id);
+    pendingRun = params;
+    $("resumeText").textContent =
+      `An export for "${existing.user}" is already in progress in this browser (${n} of ${existing.totalPages || "?"} pages, started ${fmt(existing.created)}).`;
+    show("resumeCard", true);
+    return;
+  }
+  start(params, false);
+});
+$("resumeBtn").addEventListener("click", () => { show("resumeCard", false); start(pendingRun, false); });
+$("restartBtn").addEventListener("click", async () => {
+  show("resumeCard", false);
+  await (await store()).deleteJob(pendingRun.id);
+  start(pendingRun, true);
+});
+$("stop").addEventListener("click", () => { stopRequested = true; $("stop").disabled = true; });
+$("download").addEventListener("click", () => lastResult && saveBlob(lastResult.blob, lastResult.name));
+$("clear").addEventListener("click", async () => {
+  await (await store()).clear();
+  log("Local data cleared.", "ok");
+});
+
+function busy(on) {
+  $("start").disabled = on;
+  for (const id of ["user", "key", "from", "to", "maxPages"]) $(id).disabled = on;
+  show("stop", on);
+  $("stop").disabled = false;
+}
+const beforeUnload = (e) => { e.preventDefault(); e.returnValue = ""; };
+
+async function start(params, fresh) {
+  stopRequested = false;
+  busy(true);
+  show("doneCard", false);
+  show("progressCard", true);
+  $("log").replaceChildren();
+  window.addEventListener("beforeunload", beforeUnload);
+
+  try {
+    const s = await store();
+    let job = fresh ? null : await s.getJob(params.id);
+    if (!job) {
+      // Freeze the upper bound so page boundaries stay stable when resuming.
+      job = { id: params.id, user: params.user, from: params.from,
+              to: params.to ?? Math.floor(Date.now() / 1000), created: Math.floor(Date.now() / 1000), totalPages: 0 };
+      await s.putJob(job);
+    } else {
+      log(`Resuming the export started ${fmt(job.created)}.`);
+    }
+    log(`Exporting "${job.user}"${job.from != null ? ` from ${fmt(job.from)}` : ""} up to ${fmt(job.to)}.`);
+
+    const done = new Set((await s.getPages(job.id)).map((p) => p.page));
+    const limit = () => {
+      if (!job.totalPages) return params.maxPages;
+      return params.maxPages ? Math.min(job.totalPages, params.maxPages) : job.totalPages;
+    };
+    const countDone = () => [...done].filter((p) => p <= (limit() ?? Infinity)).length;
+
+    for (let page = 1; ; page++) {
+      const lim = limit();
+      if (lim != null && page > lim) break;
+      if (done.has(page) && job.totalPages) continue;   // already fetched (resume)
+
+      setProgress(countDone(), lim, `Page ${page}${lim ? ` of ${lim}` : ""}…`);
+      const data = await fetchPage(job, params.key, page);
+      job.totalPages = Number(data["@attr"]?.totalPages || 0);
+      data.track = asTrackList(data.track).filter((t) => !isNowPlaying(t));
+      await s.putPage(job, page, data);
+      done.add(page);
+      if (page === 1) log(`${data["@attr"]?.total ?? "?"} scrobbles in range (${job.totalPages} pages of ${PAGE_LIMIT}).`);
+      setProgress(countDone(), limit(), `${countDone()} of ${limit()} pages`);
+    }
+
+    // Build the final file page by page to avoid one giant string.
+    setProgress(1, 1, "Building file…");
+    const lim = limit();
+    const pages = (await s.getPages(job.id))
+      .filter((p) => lim == null || p.page <= lim)
+      .sort((a, b) => a.page - b.page);
+    const parts = ["["];
+    let count = 0, first = Infinity, last = -Infinity;
+    pages.forEach((p, i) => {
+      if (i) parts.push(",");
+      parts.push(JSON.stringify(p.data));
+      for (const t of p.data.track) {
+        const ts = Number(t.date.uts);
+        count++; first = Math.min(first, ts); last = Math.max(last, ts);
+      }
+    });
+    parts.push("]");
+    const name = `recenttracks-${job.user}-${today()}.json`.replace(/[\/\\:*?"<>|]/g, "_");
+    const blob = new Blob(parts, { type: "application/json" });
+    lastResult = { blob, name };
+    if (!params.maxPages) await s.deleteJob(job.id);   // full export done: free the space
+
+    $("sCount").textContent = count.toLocaleString("en-US");
+    $("sFirst").textContent = count ? fmt(first) : "—";
+    $("sLast").textContent = count ? fmt(last) : "—";
+    $("sFile").textContent = `${name} (${(blob.size / 1048576).toFixed(1)} MB)`;
+    setProgress(1, 1, "Done.");
+    log("Export complete.", "ok");
+    show("doneCard", true);
+    saveBlob(blob, name);
+  } catch (e) {
+    if (e instanceof Paused) {
+      setProgress(0, 0, "Paused.");
+      log("Paused. Progress is saved: start again with the same settings to resume.", "warn");
+    } else {
+      setProgress(0, 0, "Error.");
+      log(e instanceof FatalError ? e.message : `Unexpected error: ${redact(e?.message ?? e, params.key)}`, "err");
+    }
+  } finally {
+    window.removeEventListener("beforeunload", beforeUnload);
+    busy(false);
+  }
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+try { $("user").value = localStorage.getItem("lastfm-export-user") || ""; } catch {}
+</script>
+</body>
+</html>
