@@ -4,7 +4,6 @@
 <p align="center">
   <img src="https://img.shields.io/github/license/lehenandmartin/lastfm-json-export" alt="License">
   <img src="https://img.shields.io/badge/HTML%20%2B%20JS-no%20dependencies-F7DF1E?logo=javascript&logoColor=black" alt="HTML + JS, no dependencies">
-  <img src="https://img.shields.io/badge/Koito-proof-2ea44f" alt="Koito-proof">
 </p>
 
 <p align="center">
@@ -17,9 +16,12 @@
 
 Everything happens in your browser: the page talks directly to the Last.fm API, and your API key is never stored or sent anywhere else.
 
-## Koito-proof
+## Importing into Koito or Maloja
 
-The file is an array of the raw pages returned by Last.fm's `user.getRecentTracks`, which is exactly what [Koito](https://github.com/gabehf/koito) reads. To import it, put the JSON file in Koito's `import/` folder and restart Koito.
+The file is an array of the raw pages returned by Last.fm's `user.getRecentTracks`, named `recenttracks-<user>-<date>.json`. That is exactly what [Koito](https://github.com/gabehf/koito) and [Maloja](https://github.com/krateng/maloja) read, so it imports as is. Keep `recenttracks` at the start of the file name: both use it to recognise a Last.fm export.
+
+- **Koito:** put the file in Koito's `import/` folder and restart Koito.
+- **Maloja:** put the file in the `import/` folder of Maloja's data directory and restart Maloja (or run `maloja import <file>`). Scrobbles already in the database are skipped, so importing again is safe.
 
 ## Features
 

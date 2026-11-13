@@ -83,7 +83,7 @@
 <main>
   <h1>Last.fm JSON export</h1>
   <p class="lead">Download your full Last.fm scrobble history as a JSON file, straight from the Last.fm API. Everything runs in your browser.</p>
-  <p class="badge"><span class="ok">✓</span> <strong>Koito-proof:</strong> the file can be imported as is into <a href="https://github.com/gabehf/koito">Koito</a> (and any tool that reads the raw <code>user.getRecentTracks</code> format).</p>
+  <p class="badge"><span class="ok">✓</span> The file can be imported as is into <a href="https://github.com/gabehf/koito">Koito</a> and <a href="https://github.com/krateng/maloja">Maloja</a> (and any tool that reads the raw <code>user.getRecentTracks</code> format).</p>
 
   <form id="form" class="card" autocomplete="on">
     <div class="field">
@@ -143,7 +143,9 @@
       <button class="primary" id="download" type="button">Download again</button>
       <button id="clear" type="button">Clear local data</button>
     </div>
-    <p class="note">Importing into Koito: copy the file into Koito's <code>import/</code> folder on your server, then run <code>docker compose restart koito</code>. Keep <code>recenttracks</code> in the file name, as Koito uses it to detect Last.fm exports.</p>
+    <p class="note">Importing into Koito: copy the file into Koito's <code>import/</code> folder on your server, then run <code>docker compose restart koito</code>.</p>
+    <p class="note">Importing into Maloja: copy the file into the <code>import/</code> folder of Maloja's data directory, then restart Maloja (or run <code>maloja import &lt;file&gt;</code>). Scrobbles already imported are skipped.</p>
+    <p class="note">Keep <code>recenttracks</code> at the start of the file name: Koito and Maloja both use it to detect Last.fm exports.</p>
   </section>
 </main>
 
@@ -152,7 +154,9 @@
 /*
  * Output format: a JSON array of raw `recenttracks` pages from user.getRecentTracks
  * (non-extended, so artist["#text"] is set). This is exactly what Koito's
- * internal/importer/lastfm.go reads.
+ * internal/importer/lastfm.go reads, and what Maloja's parse_lastfm_ghan_json
+ * reads (it needs the "recenttracks-*.json" file name and a date.uts on every
+ * track, hence the now-playing filter below).
  */
 const API_URL = "https://ws.audioscrobbler.com/2.0/";
 const PAGE_LIMIT = 200;
